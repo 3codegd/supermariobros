@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Super Mario Bros Level Editor</title>
+<style>
+  body { display: flex; font-family: sans-serif; margin: 0; }
+  #sidebar { width: 160px; padding: 10px; border-right: 1px solid black; }
+  #editor { border: 1px solid black; display: block; margin: 10px; }
+  .tile { width: 32px; height: 32px; margin: 2px; border: 1px solid gray; cursor: pointer; }
+  button { display: block; margin: 5px 0; width: 100%; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <div id="tiles"></div>
+  <button id="playtest">Playtest</button>
+  <button id="stop">Stop</button>
+  <button id="save">Save Level</button>
+  <button id="load">Load Level</button>
+</div>
+<canvas id="editor" width="640" height="224"></canvas>
+
+<script>
+// NES-style 16x16 tiles (scaled up to 32x32 for visibility)
+const TILE_SIZE = 32;
+const ROWS = 7;  // Visible rows (original NES 14x16px -> scaled 32px)
+const COLS = 20; // Visible columns
+const LEVEL_LENGTH = 100; // Total tiles in level
+
+const TILE_TYPES = {
+  EMPTY: { color: 'skyblue' },
+  GROUND: { color: 'green' },
+  BRICK: { color: 'brown' },
+  QUESTION: { color: 'yellow' },
+  PIPE_TOP: { color: 'darkgreen' },
+  PIPE_BOTTOM: { color: 'green' },
+  COIN: { color: 'gold' }
+};
+
+// Initialize tilemap
+let tilemap = Array.from({ length: ROWS }, () => Array(LEVEL_LENGTH).fill('EMPTY'));
+
+let selectedTile = 'GROUND';
+let canvas = document.getElementById('editor');
+let ctx = canvas.getContext('2d');
+let offsetX = 0; // Camera scroll position
+
+// Draw editor view
+function drawEditor() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      let tile = tilemap[y][x + offsetX] || 'EMPTY';
+      ctx.fillStyle = TILE_TYPES[tile].color;
+      ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      ctx.strokeStyle = 'black';
+      ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    }
+  }
+}
+
+drawEditor();
+
+// Tile palette
+let tilesDiv = document.getElementById('tiles');
+for (let key in TILE_TYPES) {
+  let tileDiv = document.createElement('div');
+  tileDiv.className = 'tile';
+  tileDiv.style.backgroundColor = TILE_TYPES[key].color;
+  tileDiv.onclick = () => selectedTile = key;
+  tilesDiv.appendChild(tileDiv);
+}
+
+// Place tiles
+canvas.addEventListener('click', e => {
+  let rect = canvas.getBoundingClientRect();
+  let x = Math.floor(e.clientX / TILE_SIZE) + offsetX;
+  let y = Math.floor(e.clientY / TILE_SIZE);
+  tilemap[y][x] = selectedTile;
+  drawEditor();
+});
+
+// Playtest variables
+let player = { x: 0, y: 0, vx: 0, vy: 0, width: TILE_SIZE, height: TILE_SIZE };
+let gravity = 0.5;
+let isPlaying = false;
+let keys = { left: false, right: false, up: false };
+
+// Input
+document.addEventListener('keydown', e => {
+  if (e.code === 'ArrowLeft') keys.left = true;
+  if (e.code === 'ArrowRight') keys.right = true;
+  if (e.code === 'ArrowUp') keys.up = true;
+});
+document.addEventListener('keyup', e => {
+  if (e.code === 'ArrowLeft') keys.left = false;
+  if (e.code === 'ArrowRight') keys.right = false;
+  if (e.code === 'ArrowUp') keys.up = false;
+});
+
+// Playtest loop
+function updatePlayer() {
+  if (keys.left) player.vx = -2;
+  else if (keys.right) player.vx = 2;
+  else player.vx = 0;
+
+  if (keys.up && player.onGround) player.vy = -8;
+
+  player.vy += gravity;
+  player.x += player.vx;
+  player.y += player.vy;
+
+  player.onGround = false;
+
+  // Collision detection
+  let leftTile = Math.floor(player.x / TILE_SIZE);
+  let rightTile = Math.floor((player.x + player.width) / TILE_SIZE);
+  let topTile = Math.floor(player.y / TILE_SIZE);
+  let bottomTile = Math.floor((player.y + player.height) / TILE_SIZE);
+
+  for (let y = topTile; y <= bottomTile; y++) {
+    for (let x = leftTile; x <= rightTile; x++) {
+      let tile = tilemap[y] ? tilemap[y][x] : 'EMPTY';
+      if (tile !== 'EMPTY') {
+        // Simple collision from top
+        if (player.vy > 0 && player.y + player.height > y * TILE_SIZE && player.y < y * TILE_SIZE) {
+          player.y = y * TILE_SIZE - player.height;
+          player.vy = 0;
+          player.onGround = true;
+        }
+      }
+    }
+  }
+
+  // Scroll camera
+  offsetX = Math.floor(player.x / TILE_SIZE) - COLS / 2;
+  if (offsetX < 0) offsetX = 0;
+  if (offsetX > LEVEL_LENGTH - COLS) offsetX = LEVEL_LENGTH - COLS;
+}
+
+function drawPlaytest() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      let tile = tilemap[y][x + offsetX] || 'EMPTY';
+      ctx.fillStyle = TILE_TYPES[tile].color;
+      ctx.fillRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      ctx.strokeStyle = 'black';
+      ctx.strokeRect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    }
+  }
+  ctx.fillStyle = 'red';
+  ctx.fillRect((player.x - offsetX * TILE_SIZE), player.y, player.width, player.height);
+}
+
+function playtestLoop() {
+  if (!isPlaying) return;
+  updatePlayer();
+  drawPlaytest();
+  requestAnimationFrame(playtestLoop);
+}
+
+// Buttons
+document.getElementById('playtest').onclick = () => {
+  isPlaying = true;
+  player.x = 0;
+  player.y = 0;
+  player.vx = 0;
+  player.vy = 0;
+  playtestLoop();
+};
+
+document.getElementById('stop').onclick = () => {
+  isPlaying = false;
+  drawEditor();
+};
+
+// Save/load
+document.getElementById('save').onclick = () => {
+  let data = JSON.stringify(tilemap);
+  localStorage.setItem('level', data);
+  alert('Level saved!');
+};
+
+document.getElementById('load').onclick = () => {
+  let data = localStorage.getItem('level');
+  if (data) {
+    tilemap = JSON.parse(data);
+    drawEditor();
+    alert('Level loaded!');
+  }
+};
+
+drawEditor();
+</script>
+</body>
+</html>
