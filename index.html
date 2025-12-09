@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Super Mario Bros Level Editor</title>
+<style>
+  body { font-family: monospace; margin: 0; display: flex; }
+  #sidebar { width: 200px; padding: 10px; border-right: 1px solid black; background: #eee; }
+  #editor { border: 1px solid black; display: block; margin: 10px; }
+  .tile-button { width: 32px; height: 32px; margin: 2px; cursor: pointer; border: 1px solid gray; }
+  button { display: block; margin: 5px 0; width: 100%; }
+</style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h3>Tools</h3>
+  <button onclick="tool='paint'">Paint</button>
+  <button onclick="tool='erase'">Erase</button>
+  <button onclick="tool='pick'">Pick</button>
+  <button onclick="tool='fill'">Fill</button>
+
+  <h3>Tiles</h3>
+  <div id="tiles"></div>
+
+  <button onclick="downloadJSON()">Download JSON</button>
+  <input type="file" accept="application/json" onchange="uploadJSON(event)"/>
+  <button onclick="exportPNG()">Export PNG</button>
+</div>
+
+<canvas id="editor" width="640" height="224"></canvas>
+
+<script>
+// --------------------------- Settings ---------------------------
+const TILE_SIZE = 32;
+const ROWS = 7;
+const COLS = 20;
+const LEVEL_LENGTH = 100;
+
+let tool = 'paint';
+let selectedTile = 'ground';
+
+// --------------------------- 8-bit textures ---------------------------
+const TEXTURES = {
+  empty: null,
+  ground: 'https://i.imgur.com/1zqD3pQ.png',      // 8-bit ground
+  brick: 'https://i.imgur.com/OR6ohgY.png',       // 8-bit brick
+  question: 'https://i.imgur.com/7rJ5hI3.png',    // 8-bit question block
+  pipe: 'https://i.imgur.com/9yEdGxn.png',        // 8-bit pipe
+  coin: 'https://i.imgur.com/xHn6A4Z.png',        // 8-bit coin
+};
+
+// --------------------------- Level data ---------------------------
+let tilemap = Array.from({length: ROWS}, () => Array(LEVEL_LENGTH).fill('empty'));
+
+// --------------------------- Canvas ---------------------------
+const canvas = document.getElementById('editor');
+const ctx = canvas.getContext('2d');
+let offsetX = 0;
+
+// --------------------------- Tile palette ---------------------------
+const tilesDiv = document.getElementById('tiles');
+for (let key in TEXTURES) {
+  const btn = document.createElement('div');
+  btn.className = 'tile-button';
+  btn.title = key;
+  if (TEXTURES[key]) btn.style.backgroundImage = `url(${TEXTURES[key]})`;
+  btn.style.backgroundSize = 'cover';
+  btn.onclick = () => selectedTile = key;
+  tilesDiv.appendChild(btn);
+}
+
+// --------------------------- Draw editor ---------------------------
+function drawEditor() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const tile = tilemap[y][x + offsetX] || 'empty';
+      if (TEXTURES[tile]) {
+        const img = new Image();
+        img.src = TEXTURES[tile];
+        ctx.drawImage(img, x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      } else {
+        ctx.fillStyle = '#87CEEB'; // sky
+        ctx.fillRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+      }
+      ctx.strokeStyle = 'black';
+      ctx.strokeRect(x*TILE_SIZE, y*TILE_SIZE, TILE_SIZE, TILE_SIZE);
+    }
+  }
+}
+
+drawEditor();
+
+// --------------------------- Mouse interaction ---------------------------
+canvas.addEventListener('mousedown', e => {
+  handleClick(e);
+  canvas.addEventListener('mousemove', handleClick);
+});
+
+canvas.addEventListener('mouseup', e => {
+  canvas.removeEventListener('mousemove', handleClick);
+});
+
+function handleClick(e) {
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX - rect.left)/TILE_SIZE) + offsetX;
+  const y = Math.floor((e.clientY - rect.top)/TILE_SIZE);
+  if (x<0 || y<0 || x>=LEVEL_LENGTH || y>=ROWS) return;
+
+  if (tool==='paint') tilemap[y][x] = selectedTile;
+  else if (tool==='erase') tilemap[y][x] = 'empty';
+  else if (tool==='pick') { selectedTile = tilemap[y][x]; tool='paint'; }
+  else if (tool==='fill') floodFill(x,y,tilemap[y][x],selectedTile);
+  drawEditor();
+}
+
+function floodFill(sx,sy,target,newTile){
+  if(target===newTile) return;
+  const stack = [[sx,sy]];
+  while(stack.length){
+    const [x,y] = stack.pop();
+    if(x<0||y<0||x>=LEVEL_LENGTH||y>=ROWS) continue;
+    if(tilemap[y][x]!==target) continue;
+    tilemap[y][x]=newTile;
+    stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+  }
+}
+
+// --------------------------- Save / Load / Export ---------------------------
+function downloadJSON(){
+  const blob = new Blob([JSON.stringify(tilemap)], {type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='level.json';
+  a.click();
+}
+
+function uploadJSON(e){
+  const f=e.target.files[0];
+  const reader=new FileReader();
+  reader.onload=evt=>{
+    const data=JSON.parse(evt.target.result);
+    if(data.length===ROWS) { tilemap=data; drawEditor(); }
+    else alert("Invalid level file");
+  };
+  reader.readAsText(f);
+}
+
+function exportPNG(){
+  canvas.toBlob(blob=>{
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob);
+    a.download='level.png';
+    a.click();
+  });
+}
+</script>
+</body>
+</html>
