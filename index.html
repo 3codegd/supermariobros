@@ -1,212 +1,702 @@
-<!DOCTYPE html>
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>NES Mario Level Editor</title>
+<meta charset="utf-8" />
+<title>NES Tiles — Full Palette Editor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
 <style>
-    body {
-        background: #1a1a1a;
-        color: white;
-        font-family: monospace;
-        display: flex;
-        gap: 20px;
-        padding: 20px;
-    }
-
-    #palette {
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-    }
-
-    .tilePreview {
-        width: 48px;
-        height: 48px;
-        image-rendering: pixelated;
-        border: 2px solid white;
-        cursor: pointer;
-    }
-
-    #editorCanvas {
-        image-rendering: pixelated;
-        border: 4px solid white;
-        background: #5c94fc; /* NES sky blue */
-        cursor: crosshair;
-    }
+  :root{
+    --ui-bg:#0f1724;
+    --panel:#0b1220;
+    --accent:#60a5fa;
+  }
+  html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Arial;background:var(--ui-bg);color:#e6eef8}
+  .app{display:flex;gap:12px;padding:12px;box-sizing:border-box;height:100%}
+  .sidebar{width:320px;background:linear-gradient(180deg,#071026,#071826);padding:12px;border-radius:8px;box-shadow:0 10px 30px rgba(2,6,23,0.7);display:flex;flex-direction:column;gap:12px}
+  .title{font-weight:700;font-size:16px}
+  button{background:#0b1220;border:1px solid rgba(255,255,255,0.06);color:#e6eef8;padding:6px 8px;border-radius:6px;cursor:pointer}
+  button.active{background:var(--accent);border-color:var(--accent);color:#04263b}
+  .controls{display:flex;gap:8px;flex-wrap:wrap}
+  .palette{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;max-height:45vh;overflow:auto;padding:4px}
+  .pal-slot{width:64px;height:64px;border-radius:6px;background:#071827;display:flex;align-items:center;justify-content:center;cursor:pointer;border:1px solid rgba(255,255,255,0.03)}
+  .selected{outline:3px solid #fff8;box-shadow:0 4px 12px rgba(0,0,0,0.6)}
+  .preview{width:96px;height:96px;border-radius:8px;background:#071827;display:flex;align-items:center;justify-content:center;border:1px solid rgba(255,255,255,0.04)}
+  .right{flex:1;display:flex;flex-direction:column;gap:10px}
+  .canvasWrap{background:linear-gradient(180deg,#042036,#022033);padding:12px;border-radius:8px;box-shadow:0 10px 30px rgba(2,6,23,0.7);overflow:auto}
+  canvas{image-rendering:pixelated;border:4px solid #000;display:block;background:#75baff}
+  .footer{font-size:12px;color:#9fb6d6}
+  label.small{font-size:12px;color:#9fb6d6}
+  input[type="range"]{width:160px}
 </style>
 </head>
 <body>
+<div class="app">
+  <div class="sidebar">
+    <div>
+      <div class="title">NES Tiles — Full Palette</div>
+      <div style="font-size:12px;color:#9fb6d6">Generated pixel tiles, paint & export. Use arrow keys to scroll level.</div>
+    </div>
 
-<!----------------------- TILE PALETTE ------------------------>
-<div id="palette">
-    <div id="ground" class="tilePreview"></div>
-    <div id="question" class="tilePreview"></div>
-    <div id="brick" class="tilePreview"></div>
+    <div>
+      <div style="font-size:13px;margin-bottom:6px">Tools</div>
+      <div class="controls" id="tools">
+        <button id="toolPaint" class="active">Paint</button>
+        <button id="toolErase">Erase</button>
+        <button id="toolPick">Pick</button>
+        <button id="toolFill">Fill</button>
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;align-items:center">
+      <div class="preview" id="previewBox"></div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        <button id="clearBtn">Clear</button>
+        <div style="display:flex;gap:6px">
+          <button id="undoBtn">Undo</button>
+          <button id="redoBtn">Redo</button>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div style="font-size:13px;margin-bottom:4px">Palette</div>
+      <div class="palette" id="palette"></div>
+    </div>
+
+    <div style="display:flex;gap:6px;align-items:center">
+      <button id="playtestBtn">Playtest</button>
+      <button id="stopPlayBtn" disabled>Stop</button>
+      <button id="exportPNG">Export PNG</button>
+    </div>
+
+    <div style="display:flex;gap:6px">
+      <button id="saveBtn">Download JSON</button>
+      <label style="display:inline-block"><button id="loadBtn">Load JSON</button><input id="fileLoad" type="file" accept="application/json" style="display:none"></label>
+    </div>
+
+    <div class="footer">
+      Controls: Paint/Erase/Pick/Fill — arrow keys scroll level — shift+wheel scrolls horizontally.
+    </div>
+  </div>
+
+  <div class="right">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <div>
+        <h2 style="margin:0">Editor</h2>
+        <div style="font-size:12px;color:#9fb6d6">Visible tiles: <span id="visCols"></span> × <span id="visRows"></span> — Total cols: <span id="totCols"></span></div>
+      </div>
+      <div style="display:flex;gap:8px;align-items:center">
+        <label class="small">Zoom</label>
+        <input id="zoom" type="range" min="2" max="5" step="1" value="3">
+      </div>
+    </div>
+
+    <div class="canvasWrap">
+      <canvas id="stage"></canvas>
+    </div>
+  </div>
 </div>
 
-<!----------------------- MAIN EDITOR ------------------------>
-<canvas id="editorCanvas" width="512" height="240"></canvas>
-
 <script>
-/* ============================================================
-   NES COLOR PALETTE (official)
-   ============================================================ */
-const NES = {
-    black: "#000000",
-    brown: "#A04800",
-    brick_brown: "#B85800",
-    question_orange: "#F8B800",
-    question_dark: "#A06000",
-    ground_brown: "#885000",
-    ground_shadow: "#503000",
-    outline: "#000000"
-};
+/* ------------------------------------------------------------
+   NES-like Full Tile Set — Generated from pixel maps
+   - TILE_BASE = 16 (16x16 pixel tile)
+   - SCALE default = 3 (result = 48px tile)
+   - Visible viewport 28×15 (wider screen)
+   - Level total width 400 tiles
+   ------------------------------------------------------------ */
 
-/* ============================================================
-   CREATE 8×8 TILE PIXEL DATA
-   ============================================================ */
+(() => {
+  const TILE_BASE = 16;
+  let SCALE = Number(document.getElementById('zoom').value); // 2..5
+  const VISIBLE_COLS = 28;
+  const VISIBLE_ROWS = 15;
+  const TOTAL_COLS = 400;
+  const ROWS = VISIBLE_ROWS;
+  const cols = TOTAL_COLS;
 
-// --- Ground tile (SMB1 overworld) ---
-function drawGroundTile(ctx) {
-    ctx.fillStyle = NES.ground_brown;
-    ctx.fillRect(0, 0, 8, 8);
+  // NES-ish palette
+  const P = {
+    sky: '#75baff',
+    black:'#000000',
+    white:'#ffffff',
+    ground_dark:'#503315',
+    ground:'#8a5a2a',
+    ground_light:'#c28c44',
+    dirt:'#b06d37',
+    brick:'#b24b3b',
+    brick_dark:'#8c2f28',
+    q_y:'#f4b400',
+    q_orange:'#d08b00',
+    pipe_dark:'#114b35',
+    pipe_light:'#27a36f',
+    coin:'#ffd64d',
+    cloud:'#ffffff',
+    bush:'#4bb24a',
+    hill:'#3aa24a',
+    castle:'#7b7b7b',
+    stone:'#9ea0a3',
+    goomba:'#8a3e2a',
+    koopa:'#2f8c6b',
+    outline:'#000000',
+  };
 
-    ctx.fillStyle = NES.outline;
-    ctx.fillRect(0, 7, 8, 1);      // bottom line
+  // Map character -> color key (string color)
+  const COLOR_MAP = {
+    '.': null,
+    'S': P.sky,
+    'g': P.ground,
+    'G': P.ground_light,
+    'd': P.dirt,
+    'b': P.brick,
+    'B': P.brick_dark,
+    'q': P.q_y,
+    'o': P.q_orange,
+    'p': P.pipe_light,
+    'P': P.pipe_dark,
+    'c': P.coin,
+    'C': P.cloud,
+    'u': P.bush,
+    'h': P.hill,
+    'k': P.castle,
+    's': P.stone,
+    'm': P.goomba,
+    'k2': P.koopa,
+    'x': P.outline
+  };
 
-    ctx.fillStyle = NES.ground_shadow;
-    ctx.fillRect(0, 4, 8, 1);      // middle shadow
-}
+  // Define tile pixel maps (16x16 strings)
+  // For brevity, tiles use mostly patterning — still give NES-like look.
+  // Each tile must be 16 strings of length 16. Use '.' for transparent/sky.
+  const TILES_DEF = {
+    empty: Array(16).fill('.'.repeat(16)),
 
+    // ground top / grass
+    ground_top: [
+      '................',
+      '................','................','................',
+      '................','................','................','....gggggggg....',
+      '...gGGGGGGGGg...','..gGGGGGGGGGGg..','.gGGGGGGGGGGGGg.','gGGGGGGGGGGGGGGg',
+      'gGGGGGGGGGGGGGGg','ggGGGGGGGGGGGGgg','gggGGGGGGGGGGg..','................'
+    ],
 
-// --- Question Block ---
-function drawQuestionTile(ctx) {
-    ctx.fillStyle = NES.question_orange;
-    ctx.fillRect(0, 0, 8, 8);
+    // dirt slab (solid)
+    dirt: [
+      '................','................','................','................',
+      '................','................','................','......dddd....',
+      '.....dddddd.....','....dddddddd....','...dddddddddd...','..dddddddddddd..',
+      '.dddddddddddddd.','dddddddddddddddd','dddddddddddddddd','................'
+    ],
 
-    // border
-    ctx.fillStyle = NES.outline;
-    ctx.fillRect(0, 0, 8, 1);
-    ctx.fillRect(0, 7, 8, 1);
-    ctx.fillRect(0, 0, 1, 8);
-    ctx.fillRect(7, 0, 1, 8);
+    // brick pattern
+    brick: [
+      '................','................','................','................',
+      '................','................','.bbbbbbbbbbbbbbbb','bBBBBBBBBBBBBBBBB',
+      '.bbbbbbbbbbbbbbbb','bBBBBBBBBBBBBBBBB','.bbbbbbbbbbbbbbbb','bBBBBBBBBBBBBBBBB',
+      '.bbbbbbbbbbbbbbbb','bBBBBBBBBBBBBBBBB','................','................'
+    ],
 
-    // question mark shape
-    ctx.fillRect(3, 2, 2, 1);
-    ctx.fillRect(4, 3, 1, 1);
-    ctx.fillRect(3, 4, 2, 1);
-    ctx.fillRect(3, 5, 1, 1); // stem
-    ctx.fillRect(3, 6, 1, 1); // dot
-}
+    // question block
+    question: [
+      '................','................','................','................',
+      '................','....qqqqqqqqqq....','...qooooooooooq...','..qoqqqqqqqqqqo..',
+      '..qoqqqqqqqqqqo..','..qoqqqqqqqqqqo..','..qoqqqqqqqqqqo..','...qooooooooooq...',
+      '....qqqqqqqqqq....','................','................','................'
+    ],
 
+    // question (hit) - darker center
+    question_hit: [
+      '................','................','................','................',
+      '................','....qqqqqqqqqq....','...qooooooooooq...','..qoqqqqqqqqqqo..',
+      '..qoqqqxxqqqqqo..','..qoqqqxxqqqqqo..','..qoqqqqqqqqqqo..','...qooooooooooq...',
+      '....qqqqqqqqqq....','................','................','................'
+    ],
 
-// --- Brick Block ---
-function drawBrickTile(ctx) {
-    ctx.fillStyle = NES.brick_brown;
-    ctx.fillRect(0, 0, 8, 8);
+    // pipe-top-left (so pair with top-right)
+    pipe_top_left: [
+      '................','................','................','................',
+      '................','................','.....PPP.PPP.....','....PPpppppPP....',
+      '...PPppppppppP...','..PpppppppppppP..','.PppppppppppppP.','Pppppppppppppppp',
+      'Pppppppppppppppp','Pppppppppppppppp','................','................'
+    ],
 
-    ctx.fillStyle = NES.outline;
-    ctx.fillRect(0, 0, 8, 1);    // top
-    ctx.fillRect(0, 3, 8, 1);    // middle line
+    // pipe-top-right
+    pipe_top_right: [
+      '................','................','................','................',
+      '................','................','.....PPP.PPP.....','....PPpppppPP....',
+      '...PPppppppppP...','..PpppppppppppP..','.PppppppppppppP.','Pppppppppppppppp',
+      'Pppppppppppppppp','Pppppppppppppppp','................','................'
+    ],
 
-    // brick cracks
-    ctx.fillRect(2, 1, 1, 2);
-    ctx.fillRect(5, 1, 1, 2);
-    ctx.fillRect(1, 4, 1, 3);
-    ctx.fillRect(4, 4, 1, 3);
-    ctx.fillRect(6, 4, 1, 3);
-}
+    // pipe-body (repeatable)
+    pipe_body: [
+      '................','................','................','................',
+      '................','................','....pppppppppp....','....pppppppppp....',
+      '....pppppppppp....','....pppppppppp....','....pppppppppp....','....pppppppppp....',
+      '....pppppppppp....','....pppppppppp....','................','................'
+    ],
 
-/* ============================================================
-   CREATE TILE CANVASES (SCALED ×6 TO LOOK NICE)
-   ============================================================ */
+    // coin
+    coin: [
+      '................','................','................','................',
+      '................','................','.......cccc......','....cccccccc....',
+      '...cccccccccc...','...cccccccccc...','...cccccccccc...','....cccccccc....',
+      '.....cccccc.....','................','................','................'
+    ],
 
-function makeTile(drawFunc) {
-    let c = document.createElement("canvas");
-    c.width = 8;
-    c.height = 8;
-    let ctx = c.getContext("2d");
+    // cloud 1 (decor)
+    cloud1:[
+      '................','................','................','................',
+      '................','.........CCCC....','......CCCCCCCC...','....CCCCCCCCCCCC.',
+      '...CCCCCCCCCCCC..','...CCCCCCCCCCCC..','....CCCCCCCCCCC..','......CCCCCC......',
+      '................','................','................','................'
+    ],
 
-    drawFunc(ctx);
+    // bush small
+    bush_small:[
+      '................','................','................','................',
+      '................','....uuuuuuuu......','...uuuuuuuuuu.....','..uuuuuuuuuuuu....',
+      '..uuuuuuuuuuuu....','...uuuuuuuuuu.....','....uuuuuuuu......','.....uuuu.......',
+      '................','................','................','................'
+    ],
 
-    return c;
-}
+    // hill
+    hill:[
+      '................','................','................','................',
+      '................','................','.......hhhh......','.....hhhhhh......',
+      '....hhhhhhhh.....','...hhhhhhhhhh....','..hhhhhhhhhhhh...','..hhhhhhhhhhhh...',
+      '...hhhhhhhhh.....','....hhhhhh.......','................','................'
+    ],
 
-const Tiles = {
-    ground: makeTile(drawGroundTile),
-    question: makeTile(drawQuestionTile),
-    brick: makeTile(drawBrickTile)
-};
+    // castle / stone wall piece
+    castle_wall:[
+      '................','................','................','..kkkkkkkkkkkk..',
+      '..kkkkkkkkkkkk..','..kkk..kkk..kkk..','..kkk..kkk..kkk..','.kkkkkkkkkkkkk.',
+      '.kkkkkkkkkkkkk.','.kkkkkkkkkkkkk.','.kkkkkkkkkkkkk.','.kkkkkkkkkkkkk.',
+      '...kkkkk..kkkk...','...kkkkk..kkkk...','................','................'
+    ],
 
-/* ============================================================
-   DRAW PALETTE
-   ============================================================ */
+    // stone block (solid)
+    stone_block:[
+      '................','................','................','................',
+      '................','................','....ssssssss....','...ssssssssss...',
+      '..ssssssssssss..','.ssssssssssssss.','ssssssssssssssss','ssssssssssssssss',
+      '.ssssssssssssss.','.ssssssssssssss.','................','................'
+    ],
 
-function placeTilePreview(id, tile) {
-    let target = document.getElementById(id);
-    target.style.backgroundImage =
-        `url(${tile.toDataURL()})`;
-    target.style.backgroundSize = "48px 48px";
-}
+    // platform (wood / plank)
+    platform:[
+      '................','................','................','................',
+      '................','................','..vvvvvvvvvvvv..','..vVVVVVVVVVVv..',
+      '..vVVVVVVVVVVv..','..vVVVVVVVVVVv..','..vvvvvvvvvvvv..','..vvvvvvvvvvvv..',
+      '................','................','................','................'
+    ],
 
-placeTilePreview("ground", Tiles.ground);
-placeTilePreview("question", Tiles.question);
-placeTilePreview("brick", Tiles.brick);
+    // stair step (for decoration)
+    stair:[
+      '................','................','................','................',
+      '................','................','...........bb...','...........bb...',
+      '...........bb...','.......bbbbbb...','.......bbbbbb...','....bbbbbbbbbb..',
+      '....bbbbbbbbbb..','....bbbbbbbbbb..','................','................'
+    ],
 
-/* ============================================================
-   CANVAS EDITOR
-   ============================================================ */
+    // Goomba (simple sprite)
+    goomba:[
+      '................','................','................','................',
+      '................','................','.....mmmmm......','....mmmmmmm.....',
+      '...mmmmmmmmm.....','..mmmmmmmmmmm....','..mmmMmmMmmm....','..mmmmmmmmmmm....',
+      '..mmmmmmmmmmm....','.....mmmmmm......','................','................'
+    ],
 
-const SCALE = 3;           // 8px tiles → 24px
-const TILE_SIZE = 8 * SCALE;
+    // Koopa Troopa (green shell)
+    koopa:[
+      '................','................','................','................',
+      '................','................','....kkkkkkk.....','...kKKKKKKKk....',
+      '..kKKKKKKKKKk...','.kKKKKKKKKKKk..','kKKKKKKKKKKKKk.','kKKKKKKKKKKKKk.',
+      '.kKKKKKKKKKKk..','..kkkkkkkkkk....','................','................'
+    ]
+  };
 
-const canvas = document.getElementById("editorCanvas");
-const ctx = canvas.getContext("2d");
+  // normalize each tile to 16 strings of length 16
+  for (const k in TILES_DEF) {
+    let arr = TILES_DEF[k].slice(0,16);
+    while (arr.length < TILE_BASE) arr.push('.'.repeat(TILE_BASE));
+    arr = arr.map(r => (r + '.'.repeat(TILE_BASE)).slice(0,TILE_BASE));
+    TILES_DEF[k] = arr;
+  }
 
-const cols = canvas.width / TILE_SIZE;
-const rows = canvas.height / TILE_SIZE;
+  // Construct tile images (16x16 canvases)
+  const tileKeys = Object.keys(TILES_DEF);
+  const tileImages = {};
 
-let selected = "ground";
-
-// click palette to select tile
-document.querySelectorAll(".tilePreview").forEach(p => {
-    p.onclick = () => {
-        selected = p.id;
-    };
-});
-
-// tile map
-const map = [];
-for (let y = 0; y < rows; y++) {
-    map[y] = [];
-    for (let x = 0; x < cols; x++) map[y][x] = null;
-}
-
-canvas.addEventListener("mousedown", drawTile);
-canvas.addEventListener("mousemove", e => {
-    if (e.buttons === 1) drawTile(e);
-});
-
-function drawTile(e) {
-    let rect = canvas.getBoundingClientRect();
-    let x = Math.floor((e.clientX - rect.left) / TILE_SIZE);
-    let y = Math.floor((e.clientY - rect.top) / TILE_SIZE);
-
-    if (x < 0 || y < 0 || x >= cols || y >= rows) return;
-
-    map[y][x] = selected;
-
+  function makeTileCanvas(key) {
+    const arr = TILES_DEF[key];
+    const c = document.createElement('canvas');
+    c.width = TILE_BASE; c.height = TILE_BASE;
+    const ctx = c.getContext('2d');
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(
-        Tiles[selected],
-        0, 0, 8, 8,
-        x * TILE_SIZE,
-        y * TILE_SIZE,
-        TILE_SIZE,
-        TILE_SIZE
-    );
-}
+    for (let y=0;y<TILE_BASE;y++){
+      const row = arr[y];
+      for (let x=0;x<TILE_BASE;x++){
+        const ch = row[x] || '.';
+        const color = COLOR_MAP[ch];
+        if (color) {
+          ctx.fillStyle = color;
+          ctx.fillRect(x,y,1,1);
+        }
+      }
+    }
+    tileImages[key] = c;
+    return c;
+  }
 
+  tileKeys.forEach(k => makeTileCanvas(k));
+
+  // Editor state
+  let visibleCols = VISIBLE_COLS;
+  let visibleRows = VISIBLE_ROWS;
+  const visibleColsEl = document.getElementById('visCols');
+  const visibleRowsEl = document.getElementById('visRows');
+  const totColsEl = document.getElementById('totCols');
+  visibleColsEl.textContent = visibleCols; visibleRowsEl.textContent = visibleRows; totColsEl.textContent = cols;
+
+  // Level grid
+  let level = [];
+  for (let r=0;r<ROWS;r++){
+    level[r] = new Array(cols).fill('empty');
+  }
+
+  // Undo/redo
+  const UNDO_MAX = 80;
+  let undoStack = [], redoStack = [];
+  function pushUndo(){
+    undoStack.push(level.map(row=>row.slice()));
+    if (undoStack.length > UNDO_MAX) undoStack.shift();
+    redoStack = [];
+  }
+  function undo(){
+    if (!undoStack.length) return;
+    redoStack.push(level.map(row=>row.slice()));
+    level = undoStack.pop();
+    draw();
+  }
+  function redo(){
+    if (!redoStack.length) return;
+    undoStack.push(level.map(row=>row.slice()));
+    level = redoStack.pop();
+    draw();
+  }
+
+  // Canvas & drawing
+  const canvas = document.getElementById('stage');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  let zoom = SCALE;
+  let tileDisplay = TILE_BASE * zoom;
+  let cameraX = 0; // leftmost tile index
+  const previewBox = document.getElementById('previewBox');
+
+  function resizeCanvas(){
+    tileDisplay = TILE_BASE * zoom;
+    canvas.width = visibleCols * tileDisplay;
+    canvas.height = visibleRows * tileDisplay;
+    draw();
+  }
+
+  // Create palette UI
+  const paletteDiv = document.getElementById('palette');
+  let selectedTile = 'ground_top';
+
+  function setSelected(tileKey){
+    selectedTile = tileKey;
+    updatePreview();
+    document.querySelectorAll('.pal-slot').forEach(el=>el.classList.toggle('selected', el.dataset.key===tileKey));
+  }
+
+  function updatePreview(){
+    previewBox.innerHTML = '';
+    const c = document.createElement('canvas');
+    c.width = TILE_BASE * 3; c.height = TILE_BASE * 3;
+    c.style.width = (TILE_BASE * 3) + 'px';
+    c.style.height = (TILE_BASE * 3) + 'px';
+    c.style.imageRendering = 'pixelated';
+    const ctxp = c.getContext('2d'); ctxp.imageSmoothingEnabled=false;
+    ctxp.fillStyle = P.sky; ctxp.fillRect(0,0,c.width,c.height);
+    const im = tileImages[selectedTile];
+    if (im) ctxp.drawImage(im, 0,0,TILE_BASE,TILE_BASE, 4,4, TILE_BASE*2, TILE_BASE*2);
+    previewBox.appendChild(c);
+  }
+
+  function buildPalette(){
+    paletteDiv.innerHTML = '';
+    tileKeys.forEach(k=>{
+      const slot = document.createElement('div');
+      slot.className = 'pal-slot';
+      slot.dataset.key = k;
+      const c = document.createElement('canvas');
+      c.width = 64; c.height = 64;
+      c.style.width='64px'; c.style.height='64px'; c.style.imageRendering='pixelated';
+      const ctx2 = c.getContext('2d'); ctx2.imageSmoothingEnabled=false;
+      ctx2.fillStyle = P.sky; ctx2.fillRect(0,0,64,64);
+      const im = tileImages[k];
+      if (im) ctx2.drawImage(im,0,0,TILE_BASE,TILE_BASE,4,4,56,56);
+      slot.appendChild(c);
+      slot.addEventListener('click', ()=> setSelected(k));
+      paletteDiv.appendChild(slot);
+    });
+    setSelected(tileKeys[0]);
+  }
+
+  buildPalette();
+
+  // Draw viewport
+  function draw(){
+    // sky background
+    ctx.fillStyle = P.sky;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    // tiles
+    for (let y=0;y<visibleRows;y++){
+      for (let x=0;x<visibleCols;x++){
+        const lx = x + cameraX;
+        const tile = (lx<cols)?level[y][lx]:'empty';
+        if (tile && tile !== 'empty') {
+          const img = tileImages[tile];
+          if (img) ctx.drawImage(img, 0,0,TILE_BASE,TILE_BASE, x*tileDisplay, y*tileDisplay, tileDisplay, tileDisplay);
+        } else {
+          // optional faint pattern for sky
+        }
+        // gridlines
+        ctx.strokeStyle = 'rgba(0,0,0,0.12)';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x*tileDisplay+0.5, y*tileDisplay+0.5, tileDisplay-1, tileDisplay-1);
+      }
+    }
+  }
+
+  resizeCanvas();
+
+  // Mouse painting
+  let isMouseDown=false;
+  function toTileCoords(e){
+    const rect = canvas.getBoundingClientRect();
+    const sx = (e.clientX-rect.left)/tileDisplay;
+    const sy = (e.clientY-rect.top)/tileDisplay;
+    return {cx: Math.floor(sx), cy: Math.floor(sy)};
+  }
+
+  function setTileAt(cx,cy,key){
+    const lx = cx + cameraX;
+    if (lx<0||lx>=cols||cy<0||cy>=ROWS) return;
+    level[cy][lx] = key;
+  }
+
+  function floodFill(sx,sy,target,replacement){
+    if (target === replacement) return;
+    const stack=[[sx,sy]];
+    while(stack.length){
+      const [x,y] = stack.pop();
+      if (x<0||x>=cols||y<0||y>=ROWS) continue;
+      if (level[y][x] !== target) continue;
+      level[y][x] = replacement;
+      stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]);
+    }
+  }
+
+  const toolButtons = {
+    paint: document.getElementById('toolPaint'),
+    erase: document.getElementById('toolErase'),
+    pick: document.getElementById('toolPick'),
+    fill: document.getElementById('toolFill')
+  };
+  let currentTool = 'paint';
+  function setTool(t){
+    currentTool = t;
+    for (const k in toolButtons) toolButtons[k].classList.toggle('active', k===t);
+    canvas.style.cursor = (t==='erase')?'not-allowed':(t==='pick'?'copy':'crosshair');
+  }
+  setTool('paint');
+
+  toolButtons.paint.addEventListener('click', ()=>setTool('paint'));
+  toolButtons.erase.addEventListener('click', ()=>setTool('erase'));
+  toolButtons.pick.addEventListener('click', ()=>setTool('pick'));
+  toolButtons.fill.addEventListener('click', ()=>setTool('fill'));
+
+  canvas.addEventListener('mousedown', e=>{
+    pushUndo();
+    isMouseDown = true;
+    const {cx,cy} = toTileCoords(e);
+    if (currentTool === 'paint') { setTileAt(cx,cy,selectedTile); draw(); }
+    else if (currentTool === 'erase') { setTileAt(cx,cy,'empty'); draw(); }
+    else if (currentTool === 'pick') { const lx = cx + cameraX; if (lx>=0 && lx<cols) { selectedTile = level[cy][lx]; setSelected(selectedTile); } }
+    else if (currentTool === 'fill') { const lx = cx + cameraX; if (lx>=0 && lx<cols) { const target = level[cy][lx]; floodFill(lx,cy,target,selectedTile); draw(); } }
+    canvas.addEventListener('mousemove', onDragPaint);
+  });
+  window.addEventListener('mouseup', ()=>{
+    if (isMouseDown){ isMouseDown=false; canvas.removeEventListener('mousemove', onDragPaint); }
+  });
+
+  function onDragPaint(e){
+    const {cx,cy} = toTileCoords(e);
+    if (currentTool === 'paint') { setTileAt(cx,cy,selectedTile); draw(); }
+    else if (currentTool === 'erase') { setTileAt(cx,cy,'empty'); draw(); }
+  }
+
+  // Undo/redo wiring
+  document.getElementById('undoBtn').addEventListener('click', undo);
+  document.getElementById('redoBtn').addEventListener('click', redo);
+
+  // clear
+  document.getElementById('clearBtn').addEventListener('click', ()=>{
+    if (!confirm('Clear entire level?')) return;
+    pushUndo();
+    for (let y=0;y<ROWS;y++) for (let x=0;x<cols;x++) level[y][x] = 'empty';
+    draw();
+  });
+
+  // save / load / export
+  document.getElementById('saveBtn').addEventListener('click', ()=>{
+    const payload = {cols: cols, rows: ROWS, level};
+    const blob = new Blob([JSON.stringify(payload,null,2)], {type:'application/json'});
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download='mario-level.json'; a.click();
+  });
+
+  document.getElementById('fileLoad').addEventListener('change', (e)=>{
+    const f = e.target.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = ()=>{
+      try {
+        const data = JSON.parse(r.result);
+        if (!data.level) { alert('Invalid level JSON'); return; }
+        pushUndo();
+        for (let y=0;y<ROWS;y++) for (let x=0;x<cols;x++) level[y][x] = (data.level[y] && data.level[y][x])?data.level[y][x]:'empty';
+        draw();
+      } catch (err) { alert('Failed to parse JSON: '+err.message); }
+    };
+    r.readAsText(f);
+  });
+
+  document.getElementById('exportPNG').addEventListener('click', ()=>{
+    // Export visible region (to avoid huge images)
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = visibleCols * tileDisplay;
+    exportCanvas.height = visibleRows * tileDisplay;
+    const ex = exportCanvas.getContext('2d');
+    ex.imageSmoothingEnabled=false;
+    ex.fillStyle = P.sky; ex.fillRect(0,0,exportCanvas.width, exportCanvas.height);
+    for (let y=0;y<visibleRows;y++){
+      for (let x=0;x<visibleCols;x++){
+        const lx = x + cameraX;
+        const t = level[y][lx];
+        if (t && t !== 'empty') {
+          const im = tileImages[t];
+          ex.drawImage(im,0,0,TILE_BASE,TILE_BASE, x*tileDisplay,y*tileDisplay,tileDisplay,tileDisplay);
+        }
+      }
+    }
+    exportCanvas.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='level.png'; a.click(); });
+  });
+
+  // palette selection wiring: clicking palette in buildPalette already sets tile. Also support keyboard selection
+  window.addEventListener('keydown', e=>{
+    if (e.key === 'ArrowLeft') { cameraX = Math.max(0, cameraX - 1); draw(); }
+    if (e.key === 'ArrowRight') { cameraX = Math.min(cols - visibleCols, cameraX + 1); draw(); }
+    if (e.key === 'z' && (e.ctrlKey || e.metaKey)) { undo(); e.preventDefault(); }
+    if (e.key === 'y' && (e.ctrlKey || e.metaKey)) { redo(); e.preventDefault(); }
+  });
+
+  // mouse wheel for horizontal scroll when shift pressed
+  canvas.addEventListener('wheel', (e)=>{
+    if (e.shiftKey){
+      cameraX = Math.max(0, Math.min(cols - visibleCols, cameraX + Math.sign(e.deltaY)));
+      draw(); e.preventDefault();
+    }
+  }, {passive:false});
+
+  // playtest (simple physics) — optional small implementation
+  let isPlaying=false;
+  const player = { x:2*TILE_BASE, y:(ROWS-3)*TILE_BASE, w:12, h:16, vx:0, vy:0, onGround:false };
+  const gravity=0.6, movespeed=1.6, jumpspeed=-9;
+  let keys={left:false,right:false,jump:false};
+  function tileSolid(tx,ty){
+    if (tx<0||tx>=cols||ty<0||ty>=ROWS) return false;
+    const t = level[ty][tx];
+    if (!t || t==='empty') return false;
+    // some decorative tiles are non-solid (e.g. coin) — treat coins as non-solid: our coin key is 'coin'
+    if (t==='coin') return false;
+    return true;
+  }
+  function physicsStep(){
+    // apply input
+    if (keys.left) player.vx = -movespeed;
+    else if (keys.right) player.vx = movespeed;
+    else player.vx = 0;
+    if (keys.jump && player.onGround) { player.vy = jumpspeed; player.onGround=false; }
+    player.vy += gravity;
+    let newX = player.x + player.vx;
+    let newY = player.y + player.vy;
+    // horizontal collision
+    const left = Math.floor(newX/ TILE_BASE), right = Math.floor((newX+player.w-1)/TILE_BASE);
+    const top = Math.floor(player.y/ TILE_BASE), bottom = Math.floor((player.y+player.h-1)/TILE_BASE);
+    for (let ty=top; ty<=bottom; ty++){
+      if (player.vx>0 && tileSolid(right,ty)){ newX = right*TILE_BASE - player.w; player.vx=0; }
+      if (player.vx<0 && tileSolid(left,ty)){ newX = (left+1)*TILE_BASE; player.vx=0; }
+    }
+    // vertical
+    const newTop = Math.floor(newY/ TILE_BASE), newBottom = Math.floor((newY+player.h-1)/TILE_BASE);
+    for (let tx = Math.floor(newX/ TILE_BASE); tx<=Math.floor((newX+player.w-1)/TILE_BASE); tx++){
+      if (player.vy>0 && tileSolid(tx,newBottom)){ newY = newBottom*TILE_BASE - player.h; player.vy=0; player.onGround=true; }
+      if (player.vy<0 && tileSolid(tx,newTop)){ newY = (newTop+1)*TILE_BASE; player.vy=0; }
+    }
+    player.x = newX; player.y = newY;
+    // camera follow
+    const centerTile = Math.floor((player.x+player.w/2)/TILE_BASE);
+    cameraX = Math.max(0, Math.min(cols-visibleCols, centerTile - Math.floor(visibleCols/2)));
+  }
+
+  // render player on draw
+  function drawPlayer(){
+    const px = (player.x - cameraX * TILE_BASE) * zoom;
+    const py = player.y * zoom;
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(px,py, player.w*zoom, player.h*zoom);
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.strokeRect(px+0.5,py+0.5, player.w*zoom-1, player.h*zoom-1);
+  }
+
+  let loopId=null;
+  function playLoop(){
+    physicsStep();
+    draw();
+    if (isPlaying) loopId = requestAnimationFrame(playLoop);
+  }
+
+  document.getElementById('playtestBtn').addEventListener('click', ()=>{
+    pushUndo();
+    isPlaying=true; document.getElementById('playtestBtn').disabled=true; document.getElementById('stopPlayBtn').disabled=false;
+    player.x = 2*TILE_BASE; player.y = (ROWS-3)*TILE_BASE; player.vx=0; player.vy=0; player.onGround=false;
+    document.addEventListener('keydown', keyDown); document.addEventListener('keyup', keyUp);
+    playLoop();
+  });
+  document.getElementById('stopPlayBtn').addEventListener('click', ()=>{
+    isPlaying=false; document.getElementById('playtestBtn').disabled=false; document.getElementById('stopPlayBtn').disabled=true;
+    if (loopId) cancelAnimationFrame(loopId);
+    document.removeEventListener('keydown', keyDown); document.removeEventListener('keyup', keyUp);
+    draw();
+  });
+  function keyDown(e){ if (e.key==='ArrowLeft' || e.key==='a') keys.left=true; if (e.key==='ArrowRight' || e.key==='d') keys.right=true; if (e.key==='ArrowUp'||e.code==='Space') keys.jump=true; }
+  function keyUp(e){ if (e.key==='ArrowLeft' || e.key==='a') keys.left=false; if (e.key==='ArrowRight' || e.key==='d') keys.right=false; if (e.key==='ArrowUp'||e.code==='Space') keys.jump=false; }
+
+  // zoom control
+  document.getElementById('zoom').addEventListener('input', (e)=>{ zoom = Number(e.target.value); SCALE = zoom; resizeCanvas(); });
+
+  // ensure preview and initial draw
+  updatePreview();
+  draw();
+
+  // helpers exposed for debug
+  window.NES_TILES = {level, tileImages, setCamera: (v)=>{ cameraX = Math.max(0,Math.min(cols-visibleCols,v|0)); draw(); }};
+})();
 </script>
 </body>
 </html>
