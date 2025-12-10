@@ -4,214 +4,222 @@
 <meta charset="utf-8"/>
 <title>SMB NES Level Editor</title>
 <style>
-body { margin:0; display:flex; font-family:sans-serif; background:#222; color:#ddd; }
-#sidebar { width:250px; background:#2b2b2b; padding:10px; box-sizing:border-box; overflow-y:auto; }
-#sidebar h3, #sidebar h4 { margin:6px 0; }
-#tabs { display:flex; gap:4px; margin-bottom:6px; }
-#tabs button { flex:1; padding:4px; cursor:pointer; }
-#tabs button.active { background:#0af; color:#000; }
-#palette { display:flex; flex-wrap:wrap; gap:4px; max-height:200px; overflow-y:auto; border:1px solid #555; padding:4px; }
-.pal { width:32px; height:32px; border:1px solid #555; cursor:pointer; image-rendering: pixelated; }
-.pal.selected { border:2px solid #0af; }
-#preview { width:64px; height:64px; border:1px solid #555; background:#000; margin-bottom:10px; image-rendering: pixelated; }
-#canvasWrap { flex:1; background:#75baff; overflow:auto; display:flex; justify-content:center; align-items:center; }
-canvas { image-rendering: pixelated; border:4px solid #000; }
+  body { margin:0; display:flex; background:#222; color:#ddd; font-family:sans-serif; }
+  #sidebar { width:260px; background:#2b2b2b; padding:10px; box-sizing:border-box; overflow:auto; }
+  #palette { display:flex; flex-direction:column; gap:8px; max-height:300px; overflow:auto; margin-bottom:10px; }
+  .category-tabs { display:flex; gap:4px; margin-bottom:4px; }
+  .category-tabs button { flex:1; padding:4px; cursor:pointer; background:#444; color:#ddd; border:none; }
+  .category-tabs button.active { background:#0af; color:#fff; }
+  .pal-row { display:flex; gap:4px; flex-wrap:wrap; }
+  .pal { width:32px; height:32px; border:1px solid #555; cursor:pointer; image-rendering:pixelated; }
+  .pal.selected { border:2px solid #0af; }
+  #preview { width:64px; height:64px; border:1px solid #555; margin-bottom:10px; image-rendering:pixelated; }
+  #canvasWrap { flex:1; background:#5c94fc; overflow:auto; }
+  canvas { image-rendering:pixelated; display:block; border:4px solid #000; }
+  button { width:100%; margin:2px 0; }
 </style>
 </head>
 <body>
+  <div id="sidebar">
+    <h3>Theme</h3>
+    <div class="category-tabs">
+      <button data-theme="overworld" class="active">Overworld</button>
+      <button data-theme="underworld">Underworld</button>
+      <button data-theme="castle">Castle</button>
+      <button data-theme="underwater">Underwater</button>
+    </div>
 
-<div id="sidebar">
-  <h3>Theme</h3>
-  <div id="tabs">
-    <button data-theme="overworld" class="active">Overworld</button>
-    <button data-theme="underworld">Underworld</button>
-    <button data-theme="castle">Castle</button>
-    <button data-theme="underwater">Underwater</button>
+    <h3>Palette</h3>
+    <div id="palette"></div>
+    <div id="preview"></div>
+
+    <h4>Tools</h4>
+    <button id="paintBtn">Paint</button>
+    <button id="eraseBtn">Erase</button>
+    <button id="pickBtn">Pick</button>
+    <button id="fillBtn">Fill</button>
+
+    <hr/>
+    <button id="clearBtn">Clear Level</button>
+    <button id="undoBtn">Undo</button>
+    <button id="redoBtn">Redo</button>
+
+    <hr/>
+    <button id="saveBtn">Download JSON</button>
+    <button id="loadBtn">Load JSON</button>
+    <input type="file" id="fileInput" style="display:none"/>
+    <button id="exportBtn">Export PNG</button>
+
+    <hr/>
+    <button id="playBtn">Playtest</button>
+    <button id="stopBtn" disabled>Stop</button>
   </div>
 
-  <h4>Palette</h4>
-  <div id="palette"></div>
-  <div id="preview"></div>
+  <div id="canvasWrap">
+    <canvas id="editor"></canvas>
+  </div>
 
-  <h4>Tools</h4>
-  <button id="paintBtn">Paint</button>
-  <button id="eraseBtn">Erase</button>
-  <button id="pickBtn">Pick</button>
-  <button id="fillBtn">Fill</button>
-
-  <hr/>
-  <button id="clearBtn">Clear Level</button>
-  <button id="undoBtn">Undo</button>
-  <button id="redoBtn">Redo</button>
-  <hr/>
-  <button id="saveBtn">Download JSON</button>
-  <button id="loadBtn">Load JSON</button>
-  <input type="file" id="fileInput" style="display:none"/>
-  <button id="exportBtn">Export PNG</button>
-  <hr/>
-  <button id="playBtn">Playtest</button>
-  <button id="stopBtn" disabled>Stop</button>
-</div>
-
-<div id="canvasWrap">
-  <canvas id="editor"></canvas>
-</div>
+<audio id="themeAudio" loop></audio>
 
 <script>
-// --- Config
+// CONFIG
 const TILESET_URL = '/main/tileset.png';
 const TILE_W = 16, TILE_H = 16;
-const VISIBLE_COLS = 28, VISIBLE_ROWS = 15, TOTAL_COLS = 400;
-let cameraX = 0, scale = 2;
+const VISIBLE_COLS = 28, VISIBLE_ROWS = 15;
+const TOTAL_COLS = 400;
 
-// --- Themes / Categories
-const themes = {
-  overworld: [0,1,2,3,4,5],
-  underworld: [6,7,8,9],
-  castle: [10,11,12,13],
-  underwater: [14,15,16,17]
+// THEMES: categories (for demo, use first 16 tiles per theme)
+const THEMES = {
+  overworld: { audio: '', categories: { bricks:[0,1,2,3], ground:[4,5,6,7] } },
+  underworld: { audio: '', categories: { bricks:[16,17,18], ground:[19,20] } },
+  castle: { audio: '', categories: { bricks:[32,33,34], ground:[35,36] } },
+  underwater: { audio: '', categories: { bricks:[48,49,50], ground:[51,52] } }
 };
-let currentTheme='overworld';
 
-// --- State
-let tilesetImage = new Image();
-tilesetImage.crossOrigin = 'anonymous';
-let tiles = [], selectedTile=0;
-let level=[], tool='paint';
-let undoStack=[], redoStack=[];
-
+// STATE
+let tilesetImage, tiles=[], selectedTile=0, tool='paint', level=[], undoStack=[], redoStack=[];
+let currentTheme='overworld', currentCategory='bricks';
 for(let y=0;y<VISIBLE_ROWS;y++) level[y]=Array(TOTAL_COLS).fill(-1);
 
-// --- Canvas
+// CANVAS
 const canvas=document.getElementById('editor');
 const ctx=canvas.getContext('2d');
+const scale=2;
 function resizeCanvas(){ canvas.width=VISIBLE_COLS*TILE_W*scale; canvas.height=VISIBLE_ROWS*TILE_H*scale; }
 resizeCanvas();
 
-// --- Load tileset
-tilesetImage.onload = ()=>{
-  sliceTiles();
-  buildPalette();
-  draw();
-};
-tilesetImage.src = TILESET_URL;
+// LOAD & SLICE TILESET
+tilesetImage=new Image();
+tilesetImage.onload = sliceTiles;
+tilesetImage.src=TILESET_URL;
 
-// --- Slice tiles with 1px up/left shift
 function sliceTiles(){
   tiles=[];
-  const cols = Math.floor(tilesetImage.width/TILE_W);
-  const rows = Math.floor(tilesetImage.height/TILE_H);
+  const cols=Math.floor(tilesetImage.width/TILE_W);
+  const rows=Math.floor(tilesetImage.height/TILE_H);
   for(let y=0;y<rows;y++){
     for(let x=0;x<cols;x++){
       const c=document.createElement('canvas'); c.width=TILE_W; c.height=TILE_H;
-      const cctx=c.getContext('2d'); cctx.imageSmoothingEnabled=false;
-      cctx.drawImage(tilesetImage, x*TILE_W-1, y*TILE_H-1, TILE_W, TILE_H, 0,0, TILE_W, TILE_H);
+      const ctx2=c.getContext('2d'); ctx2.imageSmoothingEnabled=false;
+      ctx2.drawImage(tilesetImage,
+        Math.max(0,x*TILE_W-1), Math.max(0,y*TILE_H-1),
+        TILE_W, TILE_H, 0,0, TILE_W,TILE_H);
       tiles.push(c);
     }
   }
+  buildPalette();
+  draw();
 }
 
-// --- Build palette UI
+// BUILD PALETTE
 const paletteDiv=document.getElementById('palette');
 function buildPalette(){
   paletteDiv.innerHTML='';
-  themes[currentTheme].forEach(i=>{
-    const d=document.createElement('div'); d.className='pal';
+  const catTiles = THEMES[currentTheme].categories[currentCategory];
+  const rowDiv=document.createElement('div'); rowDiv.className='pal-row';
+  catTiles.forEach(i=>{
+    const p=document.createElement('div'); p.className='pal'; p.dataset.idx=i;
     const c=document.createElement('canvas'); c.width=TILE_W*2; c.height=TILE_H*2;
-    c.style.width=c.width+'px'; c.style.height=c.height+'px';
-    const pc=c.getContext('2d'); pc.imageSmoothingEnabled=false;
-    pc.drawImage(tiles[i],0,0,TILE_W,TILE_H,0,0,c.width,c.height);
-    d.appendChild(c);
-    d.onclick=()=>{
+    const ctx2=c.getContext('2d'); ctx2.imageSmoothingEnabled=false;
+    ctx2.drawImage(tiles[i],0,0,TILE_W,TILE_H,0,0,c.width,c.height);
+    p.appendChild(c);
+    p.onclick=()=>{
       selectedTile=i;
       document.querySelectorAll('.pal').forEach(x=>x.classList.remove('selected'));
-      d.classList.add('selected');
+      p.classList.add('selected');
       updatePreview();
     };
-    paletteDiv.appendChild(d);
+    rowDiv.appendChild(p);
   });
-  paletteDiv.firstChild.click();
+  paletteDiv.appendChild(rowDiv);
+  if(rowDiv.firstChild) rowDiv.firstChild.click();
 }
 
 function updatePreview(){
   const prev=document.getElementById('preview'); prev.innerHTML='';
   const c=document.createElement('canvas'); c.width=TILE_W*scale*2; c.height=TILE_H*scale*2;
-  c.style.width=c.width+'px'; c.style.height=c.height+'px';
-  const pc=c.getContext('2d'); pc.imageSmoothingEnabled=false;
-  pc.drawImage(tiles[selectedTile],0,0,TILE_W,TILE_H,0,0,c.width,c.height);
+  const ctx2=c.getContext('2d'); ctx2.imageSmoothingEnabled=false;
+  ctx2.drawImage(tiles[selectedTile],0,0,TILE_W,TILE_H,0,0,c.width,c.height);
   prev.appendChild(c);
 }
 
-// --- Draw
+// DRAW LEVEL
 function draw(){
   ctx.imageSmoothingEnabled=false;
   ctx.fillStyle='#75baff'; ctx.fillRect(0,0,canvas.width,canvas.height);
   for(let y=0;y<VISIBLE_ROWS;y++){
     for(let vx=0;vx<VISIBLE_COLS;vx++){
-      const lx=vx+cameraX; const t=level[y][lx];
+      const lx=vx; const t=level[y][lx];
       if(t>=0) ctx.drawImage(tiles[t],0,0,TILE_W,TILE_H,vx*TILE_W*scale,y*TILE_H*scale,TILE_W*scale,TILE_H*scale);
     }
   }
+  // grid
   ctx.strokeStyle='rgba(0,0,0,0.15)';
-  for(let x=0;x<=VISIBLE_COLS;x++){ const px=x*TILE_W*scale+0.5; ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,canvas.height); ctx.stroke(); }
-  for(let y=0;y<=VISIBLE_ROWS;y++){ const py=y*TILE_H*scale+0.5; ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(canvas.width,py); ctx.stroke(); }
+  for(let x=0;x<=VISIBLE_COLS;x++){ const px=x*TILE_W*scale+0.5; ctx.beginPath();ctx.moveTo(px,0);ctx.lineTo(px,canvas.height);ctx.stroke(); }
+  for(let y=0;y<=VISIBLE_ROWS;y++){ const py=y*TILE_H*scale+0.5; ctx.beginPath();ctx.moveTo(0,py);ctx.lineTo(canvas.width,py);ctx.stroke(); }
 }
 
-// --- Paint / Mouse
+// MOUSE PAINT
 let isDown=false;
-canvas.addEventListener('mousedown', e=>{ isDown=true; paint(e); window.addEventListener('mousemove',paint); });
-window.addEventListener('mouseup',()=>{ isDown=false; window.removeEventListener('mousemove',paint); });
-
-function paint(e){
-  if(!isDown) return;
+canvas.addEventListener('mousedown',e=>{ isDown=true; handlePaint(e); window.addEventListener('mousemove',handlePaint); });
+window.addEventListener('mouseup',()=>{ isDown=false; window.removeEventListener('mousemove',handlePaint); });
+function handlePaint(e){
   const rect=canvas.getBoundingClientRect();
   const vx=Math.floor((e.clientX-rect.left)/(TILE_W*scale));
   const vy=Math.floor((e.clientY-rect.top)/(TILE_H*scale));
-  const lx=vx+cameraX;
-  if(lx<0||lx>=TOTAL_COLS||vy<0||vy>=VISIBLE_ROWS) return;
-  if(tool==='paint') level[vy][lx]=selectedTile;
-  else if(tool==='erase') level[vy][lx]=-1;
-  else if(tool==='pick'){ const t=level[vy][lx]; if(t>=0){selectedTile=t; updatePreview();} }
-  else if(tool==='fill'){ flood(lx,vy,level[vy][lx],selectedTile); }
-  draw();
+  if(vx<0||vx>=TOTAL_COLS||vy<0||vy>=VISIBLE_ROWS) return;
+  if(tool==='paint'){ level[vy][vx]=selectedTile; draw(); }
+  else if(tool==='erase'){ level[vy][vx]=-1; draw(); }
+  else if(tool==='pick'){ const t=level[vy][vx]; if(t>=0){ selectedTile=t; document.querySelector(`[data-idx='${t}']`).click(); } }
+  else if(tool==='fill'){ const target=level[vy][vx]; flood(vx,vy,target,selectedTile); draw(); }
 }
 
 function flood(sx,sy,target,repl){ const stack=[[sx,sy]]; while(stack.length){ const [x,y]=stack.pop(); if(x<0||x>=TOTAL_COLS||y<0||y>=VISIBLE_ROWS) continue; if(level[y][x]!==target) continue; level[y][x]=repl; stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]); } }
 
-// --- Tools
-document.getElementById('paintBtn').onclick=()=>tool='paint';
-document.getElementById('eraseBtn').onclick=()=>tool='erase';
-document.getElementById('pickBtn').onclick=()=>tool='pick';
-document.getElementById('fillBtn').onclick=()=>tool='fill';
+// TOOL BUTTONS
+document.getElementById('paintBtn').onclick=()=>setTool('paint');
+document.getElementById('eraseBtn').onclick=()=>setTool('erase');
+document.getElementById('pickBtn').onclick=()=>setTool('pick');
+document.getElementById('fillBtn').onclick=()=>setTool('fill');
+function setTool(t){ tool=t; }
 
-// --- Undo / redo / clear
+// CLEAR / UNDO / REDO
 function snapshot(){ undoStack.push(level.map(r=>r.slice())); if(undoStack.length>50) undoStack.shift(); }
-document.getElementById('clearBtn').onclick=()=>{ if(!confirm('Clear entire level?')) return; snapshot(); for(let y=0;y<VISIBLE_ROWS;y++) for(let x=0;x<TOTAL_COLS;x++) level[y][x]=-1; draw(); };
+document.getElementById('clearBtn').onclick=()=>{ if(!confirm('Clear level?')) return; snapshot(); for(let y=0;y<VISIBLE_ROWS;y++) for(let x=0;x<TOTAL_COLS;x++) level[y][x]=-1; draw(); };
 document.getElementById('undoBtn').onclick=()=>{ if(!undoStack.length) return; redoStack.push(level.map(r=>r.slice())); level=undoStack.pop(); draw(); };
 document.getElementById('redoBtn').onclick=()=>{ if(!redoStack.length) return; undoStack.push(level.map(r=>r.slice())); level=redoStack.pop(); draw(); };
 
-// --- Save / load / export
+// SAVE / LOAD JSON
 document.getElementById('saveBtn').onclick=()=>{ const blob=new Blob([JSON.stringify({cols:TOTAL_COLS,rows:VISIBLE_ROWS,map:level})],{type:'application/json'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='level.json'; a.click(); };
 document.getElementById('loadBtn').onclick=()=>document.getElementById('fileInput').click();
-document.getElementById('fileInput').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ const data=JSON.parse(r.result); if(data.map&&data.map.length===VISIBLE_ROWS){ snapshot(); level=data.map; draw(); }else alert('Bad JSON'); }catch(err){alert('Error:'+err)} }; r.readAsText(f); };
+document.getElementById('fileInput').onchange=e=>{ const f=e.target.files[0]; if(!f) return; const r=new FileReader(); r.onload=()=>{ try{ const data=JSON.parse(r.result); if(data.map && data.map.length===VISIBLE_ROWS){ snapshot(); level=data.map; draw(); } else alert('Bad JSON'); }catch(err){alert('Error:'+err);} }; r.readAsText(f); };
+
+// EXPORT PNG
 document.getElementById('exportBtn').onclick=()=>{ const ex=document.createElement('canvas'); ex.width=canvas.width; ex.height=canvas.height; const ectx=ex.getContext('2d'); ectx.imageSmoothingEnabled=false; ectx.drawImage(canvas,0,0); ex.toBlob(b=>{ const a=document.createElement('a'); a.href=URL.createObjectURL(b); a.download='level.png'; a.click(); }); };
 
-// --- Scroll camera
-window.addEventListener('keydown',e=>{ if(e.key==='ArrowLeft') cameraX=Math.max(0,cameraX-1),draw(); if(e.key==='ArrowRight') cameraX=Math.min(TOTAL_COLS-VISIBLE_COLS,cameraX+1),draw(); });
-
-// --- Playtest
-document.getElementById('playBtn').onclick=()=>{ draw(); ctx.fillStyle='red'; ctx.fillRect(0,canvas.height-TILE_H*scale,TILE_W*scale,TILE_H*scale); document.getElementById('playBtn').disabled=true; document.getElementById('stopBtn').disabled=false; };
-document.getElementById('stopBtn').onclick=()=>{ draw(); document.getElementById('playBtn').disabled=false; document.getElementById('stopBtn').disabled=true; };
-
-// --- Theme tabs
-document.querySelectorAll('#tabs button').forEach(b=>{
+// THEME SELECTOR
+const audioEl=document.getElementById('themeAudio');
+document.querySelectorAll('.category-tabs button').forEach(b=>{
   b.onclick=()=>{
-    document.querySelectorAll('#tabs button').forEach(x=>x.classList.remove('active'));
+    document.querySelectorAll('.category-tabs button').forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     currentTheme=b.dataset.theme;
+    currentCategory=Object.keys(THEMES[currentTheme].categories)[0];
     buildPalette();
+    // Play theme audio placeholder
+    audioEl.src=THEMES[currentTheme].audio; 
+    if(audioEl.src) audioEl.play();
   };
 });
+
+// PLAYTEST
+let playing=false;
+function drawPlayer(){ const pw=TILE_W*scale, ph=TILE_H*scale; ctx.fillStyle='red'; ctx.fillRect(0,canvas.height-ph,pw,ph); }
+function startPlay(){ playing=true; document.getElementById('playBtn').disabled=true; document.getElementById('stopBtn').disabled=false; draw(); drawPlayer(); }
+function stopPlay(){ playing=false; document.getElementById('playBtn').disabled=false; document.getElementById('stopBtn').disabled=true; draw(); }
+document.getElementById('playBtn').onclick=startPlay;
+document.getElementById('stopBtn').onclick=stopPlay;
+
 </script>
 </body>
 </html>
