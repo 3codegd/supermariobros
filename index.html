@@ -1,70 +1,82 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8"/>
-  <title>SMB NES Level Editor</title>
-  <style>
-    body { margin:0; display:flex; background:#222; color:#ddd; font-family:sans-serif; }
-    #sidebar { width:260px; background:#2b2b2b; padding:10px; box-sizing:border-box; overflow-y:auto; }
-    #sidebar button, #sidebar input, #sidebar select { width:100%; margin:4px 0; }
-    #palette { display:grid; grid-template-columns: repeat(4, 48px); gap:4px; margin-bottom:10px; }
-    .pal { width:48px; height:48px; border:1px solid #555; background:#000; cursor:pointer; image-rendering: pixelated; }
-    .pal.selected { border:2px solid #0af; }
-    #preview { width:64px; height:64px; border:1px solid #555; background:#000; margin-bottom:10px; image-rendering: pixelated; }
-    #canvasWrap { flex:1; background:#5c94fc; overflow:auto; }
-    canvas { image-rendering: pixelated; display:block; border:4px solid #000; }
-    h3,h4 { margin:6px 0 2px; }
-    hr { border-color:#444; margin:6px 0; }
-  </style>
+<meta charset="utf-8"/>
+<title>SMB NES Level Editor - Themed</title>
+<style>
+body { margin:0; display:flex; background:#222; color:#ddd; font-family:sans-serif; }
+#sidebar { width:280px; background:#2b2b2b; padding:10px; box-sizing:border-box; overflow-y:auto; }
+#sidebar button, #sidebar input, #sidebar select { width:100%; margin:4px 0; }
+#palette { display:grid; grid-template-columns: repeat(4, 48px); gap:4px; margin-bottom:10px; }
+.pal { width:48px; height:48px; border:1px solid #555; background:#000; cursor:pointer; image-rendering: pixelated; }
+.pal.selected { border:2px solid #0af; }
+#preview { width:64px; height:64px; border:1px solid #555; background:#000; margin-bottom:10px; image-rendering: pixelated; }
+#canvasWrap { flex:1; background:#5c94fc; overflow:auto; }
+canvas { image-rendering: pixelated; display:block; border:4px solid #000; }
+h3,h4 { margin:6px 0 2px; }
+hr { border-color:#444; margin:6px 0; }
+</style>
 </head>
 <body>
-  <div id="sidebar">
-    <h3>Palette Category</h3>
-    <select id="categorySelect"></select>
+<div id="sidebar">
+  <h3>Theme</h3>
+  <select id="themeSelect"></select>
 
-    <h3>Tileset</h3>
-    <div id="palette"></div>
-    <div id="preview"></div>
+  <h3>Palette Category</h3>
+  <select id="categorySelect"></select>
 
-    <h4>Tools</h4>
-    <button id="paintBtn">Paint</button>
-    <button id="eraseBtn">Erase</button>
-    <button id="pickBtn">Pick</button>
-    <button id="fillBtn">Fill</button>
-    <hr/>
-    <button id="clearBtn">Clear Level</button>
-    <button id="undoBtn">Undo</button>
-    <button id="redoBtn">Redo</button>
-    <hr/>
-    <button id="saveBtn">Download JSON</button>
-    <button id="loadBtn">Load JSON</button>
-    <input type="file" id="fileInput" style="display:none"/>
-    <button id="exportBtn">Export PNG</button>
-    <hr/>
-    <button id="playBtn">Playtest</button>
-    <button id="stopBtn" disabled>Stop</button>
-  </div>
+  <h3>Tileset</h3>
+  <div id="palette"></div>
+  <div id="preview"></div>
 
-  <div id="canvasWrap">
-    <canvas id="editor"></canvas>
-  </div>
+  <h4>Tools</h4>
+  <button id="paintBtn">Paint</button>
+  <button id="eraseBtn">Erase</button>
+  <button id="pickBtn">Pick</button>
+  <button id="fillBtn">Fill</button>
+  <hr/>
+  <button id="clearBtn">Clear Level</button>
+  <button id="undoBtn">Undo</button>
+  <button id="redoBtn">Redo</button>
+  <hr/>
+  <button id="saveBtn">Download JSON</button>
+  <button id="loadBtn">Load JSON</button>
+  <input type="file" id="fileInput" style="display:none"/>
+  <button id="exportBtn">Export PNG</button>
+  <hr/>
+  <button id="playBtn">Playtest</button>
+  <button id="stopBtn" disabled>Stop</button>
+</div>
+
+<div id="canvasWrap">
+  <canvas id="editor"></canvas>
+</div>
 
 <script>
 // --- Config
-const TILESET_URL = '/main/tileset.png'; // Replace with NES tileset
+const TILESET_URL = 'https://i.imgur.com/2lXfGmH.png'; // NES tileset
 const TILE_W = 16;
 const TILE_H = 16;
 const VISIBLE_COLS = 28;
 const VISIBLE_ROWS = 15;
 const TOTAL_COLS = 400;
-const PADDING = 1; // pixel padding to prevent bleeding
+const PADDING = 1;
 
-// --- Categories
+// --- Themes with allowed tile indices
+const themes = {
+  Overworld: [0,1,2,3,4,5,6,7,8], // brown bricks, grass
+  Underworld: [9,10,11,12,13],    // blue bricks
+  Castle: [14,15,16,17,18],       // gray bricks
+  Underwater: [19,20,21,22,23]    // green bricks
+};
+let currentTheme = 'Overworld';
+
+// --- Categories (subset of tiles for theme)
 const categories = {
   Ground: [0,1,2,3],
-  Blocks: [4,5,6,7,8,9],
-  Objects: [10,11,12],
-  Pipes: [13,14,15]
+  Blocks: [4,5,6,7,8],
+  Objects: [9,10,11],
+  Pipes: [12,13,14]
 };
 let currentCategory = 'Ground';
 
@@ -76,62 +88,78 @@ for(let y=0;y<VISIBLE_ROWS;y++) level[y] = Array(TOTAL_COLS).fill(-1);
 // --- Canvas
 const canvas = document.getElementById('editor');
 const ctx = canvas.getContext('2d');
-let cameraX = 0, scale=2;
-canvas.width = VISIBLE_COLS*TILE_W*scale;
-canvas.height = VISIBLE_ROWS*TILE_H*scale;
+let cameraX=0, scale=2;
+canvas.width=VISIBLE_COLS*TILE_W*scale;
+canvas.height=VISIBLE_ROWS*TILE_H*scale;
 
 // --- Load tileset & crop
-tilesetImage = new Image();
-tilesetImage.crossOrigin = 'anonymous';
-tilesetImage.onload = ()=>{
-  const cols = Math.floor(tilesetImage.width / TILE_W);
-  const rows = Math.floor(tilesetImage.height / TILE_H);
+tilesetImage=new Image();
+tilesetImage.crossOrigin='anonymous';
+tilesetImage.onload=()=>{
+  const cols=Math.floor(tilesetImage.width/TILE_W);
+  const rows=Math.floor(tilesetImage.height/TILE_H);
   for(let ry=0; ry<rows; ry++){
     for(let rx=0; rx<cols; rx++){
-      const c = document.createElement('canvas');
-      c.width = TILE_W + 2*PADDING;
-      c.height = TILE_H + 2*PADDING;
-      const cctx = c.getContext('2d');
+      const c=document.createElement('canvas');
+      c.width=TILE_W+2*PADDING;
+      c.height=TILE_H+2*PADDING;
+      const cctx=c.getContext('2d');
       cctx.imageSmoothingEnabled=false;
       cctx.clearRect(0,0,c.width,c.height);
       cctx.drawImage(tilesetImage, rx*TILE_W, ry*TILE_H, TILE_W, TILE_H, PADDING,PADDING, TILE_W,TILE_H);
       tiles.push(c);
     }
   }
+  buildThemeSelector();
   buildCategorySelector();
   buildPalette();
   draw();
 };
-tilesetImage.src = TILESET_URL;
+tilesetImage.src=TILESET_URL;
 
-// --- Category selector
-const categorySelect = document.getElementById('categorySelect');
-function buildCategorySelector(){
-  categorySelect.innerHTML='';
-  for(const cat in categories){
-    const opt = document.createElement('option');
-    opt.value=cat; opt.textContent=cat;
-    categorySelect.appendChild(opt);
+// --- Theme selector
+const themeSelect=document.getElementById('themeSelect');
+function buildThemeSelector(){
+  themeSelect.innerHTML='';
+  for(const th in themes){
+    const opt=document.createElement('option');
+    opt.value=th; opt.textContent=th;
+    themeSelect.appendChild(opt);
   }
-  categorySelect.onchange = ()=>{
-    currentCategory = categorySelect.value;
+  themeSelect.onchange=()=>{
+    currentTheme=themeSelect.value;
     buildPalette();
   };
 }
 
-// --- Build palette UI
-const paletteDiv = document.getElementById('palette');
+// --- Category selector
+const categorySelect=document.getElementById('categorySelect');
+function buildCategorySelector(){
+  categorySelect.innerHTML='';
+  for(const cat in categories){
+    const opt=document.createElement('option');
+    opt.value=cat; opt.textContent=cat;
+    categorySelect.appendChild(opt);
+  }
+  categorySelect.onchange=()=>{
+    currentCategory=categorySelect.value;
+    buildPalette();
+  };
+}
+
+// --- Palette
+const paletteDiv=document.getElementById('palette');
 function buildPalette(){
   paletteDiv.innerHTML='';
-  categories[currentCategory].forEach(i=>{
-    const tile = tiles[i];
-    const d = document.createElement('div');
-    d.className='pal';
-    d.dataset.idx=i;
-    const c = document.createElement('canvas');
+  const allowedTiles=themes[currentTheme].filter(i=>categories[currentCategory].includes(i));
+  allowedTiles.forEach(i=>{
+    const tile=tiles[i];
+    const d=document.createElement('div');
+    d.className='pal'; d.dataset.idx=i;
+    const c=document.createElement('canvas');
     c.width=TILE_W*2; c.height=TILE_H*2;
     c.style.width=(TILE_W*2)+'px'; c.style.height=(TILE_H*2)+'px';
-    const pc = c.getContext('2d'); pc.imageSmoothingEnabled=false;
+    const pc=c.getContext('2d'); pc.imageSmoothingEnabled=false;
     pc.drawImage(tile,0,0);
     d.appendChild(c);
     d.onclick=()=>{
@@ -142,16 +170,14 @@ function buildPalette(){
     };
     paletteDiv.appendChild(d);
   });
-  paletteDiv.firstChild.click();
+  if(paletteDiv.firstChild) paletteDiv.firstChild.click();
 }
 
 function updatePreview(){
-  const prev = document.getElementById('preview');
-  prev.innerHTML='';
-  const c = document.createElement('canvas');
-  c.width = TILE_W*scale*2; c.height=TILE_H*scale*2;
+  const prev=document.getElementById('preview'); prev.innerHTML='';
+  const c=document.createElement('canvas'); c.width=TILE_W*scale*2; c.height=TILE_H*scale*2;
   c.style.width=c.width+'px'; c.style.height=c.height+'px';
-  const pc = c.getContext('2d'); pc.imageSmoothingEnabled=false;
+  const pc=c.getContext('2d'); pc.imageSmoothingEnabled=false;
   pc.drawImage(tiles[selectedTile],0,0,TILE_W,TILE_H,0,0,c.width,c.height);
   prev.appendChild(c);
 }
@@ -159,16 +185,13 @@ function updatePreview(){
 // --- Drawing
 function draw(){
   ctx.imageSmoothingEnabled=false;
-  ctx.fillStyle='#75baff';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.fillStyle='#75baff'; ctx.fillRect(0,0,canvas.width,canvas.height);
   for(let y=0;y<VISIBLE_ROWS;y++){
     for(let vx=0;vx<VISIBLE_COLS;vx++){
-      const lx=vx+cameraX;
-      const t=level[y][lx];
-      if(t>=0) ctx.drawImage(tiles[t],0,0,TILE_W,TILE_H, vx*TILE_W*scale, y*TILE_H*scale, TILE_W*scale,TILE_H*scale);
+      const lx=vx+cameraX; const t=level[y][lx];
+      if(t>=0) ctx.drawImage(tiles[t],0,0,TILE_W,TILE_H,vx*TILE_W*scale,y*TILE_H*scale,TILE_W*scale,TILE_H*scale);
     }
   }
-  // Grid lines
   ctx.strokeStyle='rgba(0,0,0,0.15)';
   for(let x=0;x<=VISIBLE_COLS;x++){ const px=x*TILE_W*scale+0.5; ctx.beginPath(); ctx.moveTo(px,0); ctx.lineTo(px,canvas.height); ctx.stroke(); }
   for(let y=0;y<=VISIBLE_ROWS;y++){ const py=y*TILE_H*scale+0.5; ctx.beginPath(); ctx.moveTo(0,py); ctx.lineTo(canvas.width,py); ctx.stroke(); }
@@ -194,7 +217,7 @@ function handlePaint(e){
 }
 function flood(sx,sy,target,repl){ const stack=[[sx,sy]]; while(stack.length){ const [x,y]=stack.pop(); if(x<0||x>=TOTAL_COLS||y<0||y>=VISIBLE_ROWS) continue; if(level[y][x]!==target) continue; level[y][x]=repl; stack.push([x+1,y],[x-1,y],[x,y+1],[x,y-1]); } }
 
-// --- Tool buttons
+// --- Tools
 document.getElementById('paintBtn').onclick=()=>setTool('paint');
 document.getElementById('eraseBtn').onclick=()=>setTool('erase');
 document.getElementById('pickBtn').onclick=()=>setTool('pick');
@@ -208,25 +231,29 @@ document.getElementById('clearBtn').onclick=()=>{
   snapshot(); for(let y=0;y<VISIBLE_ROWS;y++) for(let x=0;x<TOTAL_COLS;x++) level[y][x]=-1;
   draw();
 };
-document.getElementById('undoBtn').onclick=()=>{
-  if(!undoStack.length) return;
-  redoStack.push(level.map(r=>r.slice())); level=undoStack.pop(); draw();
-};
-document.getElementById('redoBtn').onclick=()=>{
-  if(!redoStack.length) return;
-  undoStack.push(level.map(r=>r.slice())); level=redoStack.pop(); draw();
-};
+document.getElementById('undoBtn').onclick=()=>{ if(!undoStack.length) return; redoStack.push(level.map(r=>r.slice())); level=undoStack.pop(); draw(); };
+document.getElementById('redoBtn').onclick=()=>{ if(!redoStack.length) return; undoStack.push(level.map(r=>r.slice())); level=redoStack.pop(); draw(); };
 
 // --- Save / Load
 document.getElementById('saveBtn').onclick=()=>{
-  const blob=new Blob([JSON.stringify({cols:TOTAL_COLS, rows:VISIBLE_ROWS, map:level})],{type:'application/json'});
+  const blob=new Blob([JSON.stringify({cols:TOTAL_COLS, rows:VISIBLE_ROWS, map:level, theme:currentTheme})],{type:'application/json'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='level.json'; a.click();
 };
 document.getElementById('loadBtn').onclick=()=>document.getElementById('fileInput').click();
 document.getElementById('fileInput').onchange=e=>{
   const f=e.target.files[0]; if(!f) return;
   const r=new FileReader();
-  r.onload=()=>{ try{ const data=JSON.parse(r.result); if(data.map && data.map.length===VISIBLE_ROWS){ snapshot(); level=data.map; draw(); } else alert('Bad JSON'); } catch(err){ alert('Error:'+err); } };
+  r.onload=()=>{
+    try{ const data=JSON.parse(r.result);
+      if(data.map && data.map.length===VISIBLE_ROWS){
+        currentTheme=data.theme||'Overworld';
+        themeSelect.value=currentTheme;
+        snapshot();
+        level=data.map;
+        draw();
+      }else alert('Bad JSON');
+    }catch(err){ alert('Error:'+err); }
+  };
   r.readAsText(f);
 };
 
